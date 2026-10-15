@@ -64,7 +64,6 @@ let activeTab = (() => {
 })();
 const touched = new Set();
 let toastTimer = 0;
-let lastBuilt = null;
 
 function modeValue() {
   return form.querySelector('input[name="mode"]:checked')?.value ?? "caller";
@@ -140,7 +139,6 @@ function validate(input, built) {
 function render() {
   const input = readInput();
   const built = buildOutputs(input);
-  lastBuilt = built;
 
   outputs.obs.textContent = built.obs;
   outputs.ffmpeg.textContent = built.ffmpeg;
