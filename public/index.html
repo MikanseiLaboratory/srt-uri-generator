@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta
+      name="description"
+      content="SRT URI Generator: OBS Studio / FFmpeg / srt-live-transmit / vMix 向けの srt:// URI をブラウザ内で生成します。"
+    />
+    <title>SRT URI Generator</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        --bg: #f6f7f9;
+        --panel: #ffffff;
+        --text: #1b1f24;
+        --muted: #5c6670;
+        --border: #d9dee4;
+        --accent: #0b6bcb;
+        --accent-text: #ffffff;
+        --danger: #b42318;
+        --code-bg: #f0f2f5;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          "Hiragino Sans",
+          "Noto Sans JP",
+          sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1216;
+          --panel: #171b21;
+          --text: #e6e9ed;
+          --muted: #9aa4af;
+          --border: #2b323b;
+          --accent: #4c9eff;
+          --accent-text: #0b1220;
+          --danger: #ff7b6b;
+          --code-bg: #0b0e12;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.5;
+      }
+      main {
+        max-width: 960px;
+        margin: 0 auto;
+        padding: 24px 16px 64px;
+      }
+      header h1 {
+        margin: 0 0 4px;
+        font-size: 1.6rem;
+      }
+      header p {
+        margin: 0 0 20px;
+        color: var(--muted);
+      }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 16px;
+        margin-bottom: 16px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px 16px;
+      }
+      label {
+        display: block;
+        font-size: 0.9rem;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .hint {
+        display: block;
+        font-weight: 400;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      input,
+      select {
+        width: 100%;
+        padding: 8px 10px;
+        font: inherit;
+        color: var(--text);
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      input:focus,
+      select:focus {
+        outline: 2px solid var(--accent);
+        outline-offset: 1px;
+      }
+      .errors {
+        color: var(--danger);
+        margin: 12px 0 0;
+        padding-left: 1.2em;
+      }
+      .errors:empty {
+        display: none;
+      }
+      .result {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px 12px;
+        align-items: start;
+        padding: 12px 0;
+        border-top: 1px solid var(--border);
+      }
+      .result:first-of-type {
+        border-top: none;
+        padding-top: 0;
+      }
+      .result h3 {
+        margin: 0;
+        font-size: 1rem;
+      }
+      .result .note {
+        margin: 2px 0 6px;
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      .result output {
+        display: block;
+        grid-column: 1 / -1;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.9rem;
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 8px 10px;
+        word-break: break-all;
+        min-height: 2.4em;
+      }
+      button {
+        font: inherit;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: var(--accent-text);
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      footer {
+        color: var(--muted);
+        font-size: 0.85rem;
+      }
+      footer a {
+        color: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>SRT URI Generator</h1>
+        <p>
+          OBS Studio / FFmpeg / srt-live-transmit / vMix 向けの <code>srt://</code> URI
+          をツールごとの単位・エスケープ規則に合わせて生成します。入力内容はブラウザ内でのみ処理され、サーバーには一切送信されません。
+        </p>
+      </header>
+
+      <form id="form" class="panel" autocomplete="off" novalidate>
+        <div class="grid">
+          <div>
+            <label for="host">ホスト <span class="hint">IP アドレスまたはホスト名</span></label>
+            <input id="host" name="host" type="text" placeholder="例: 203.0.113.10" required />
+          </div>
+          <div>
+            <label for="port">ポート <span class="hint">1〜65535</span></label>
+            <input id="port" name="port" type="number" min="1" max="65535" value="9000" required />
+          </div>
+          <div>
+            <label for="mode">モード <span class="hint">通常は caller</span></label>
+            <select id="mode" name="mode">
+              <option value="caller" selected>caller</option>
+              <option value="listener">listener</option>
+              <option value="rendezvous">rendezvous</option>
+            </select>
+          </div>
+          <div>
+            <label for="latencyMs">
+              レイテンシ (ms)
+              <span class="hint">OBS / FFmpeg にはマイクロ秒へ自動変換</span>
+            </label>
+            <input id="latencyMs" name="latencyMs" type="number" min="0" step="1" value="120" />
+          </div>
+          <div>
+            <label for="streamId">Stream ID <span class="hint">任意</span></label>
+            <input id="streamId" name="streamId" type="text" placeholder="例: #!::r=live/stream1" />
+          </div>
+          <div>
+            <label for="passphrase">
+              パスフレーズ
+              <span class="hint">任意・10〜79 文字。ブラウザ外へは送信されません</span>
+            </label>
+            <input id="passphrase" name="passphrase" type="password" minlength="10" maxlength="79" />
+          </div>
+          <div>
+            <label for="pbKeyLen">暗号鍵長 (pbkeylen) <span class="hint">パスフレーズ指定時のみ有効</span></label>
+            <select id="pbKeyLen" name="pbKeyLen">
+              <option value="16" selected>16 (AES-128)</option>
+              <option value="24">24 (AES-192)</option>
+              <option value="32">32 (AES-256)</option>
+              <option value="0">0 (未指定・既定値)</option>
+            </select>
+          </div>
+        </div>
+        <ul id="errors" class="errors" aria-live="polite"></ul>
+      </form>
+
+      <section id="results" class="panel" aria-live="polite"></section>
+
+      <footer>
+        <p>
+          レイテンシの単位: OBS Studio / FFmpeg はマイクロ秒 (µs)、srt-live-transmit / vMix はミリ秒
+          (ms)。パスフレーズと Stream ID は <code>encodeURIComponent</code> でエスケープされます。
+        </p>
+      </footer>
+    </main>
+
+    <script type="module" src="./app.mjs"></script>
+  </body>
+</html>
