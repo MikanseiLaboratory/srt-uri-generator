@@ -3,230 +3,311 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SRT URI</title>
-  <style>
-    :root {
-      --ink: #1a1a1a;
-      --paper: #f3efe6;
-      --panel: #fffdf8;
-      --line: #c8c0b2;
-      --mark: #1f3a2e;
-      --mark-ink: #f3efe6;
-      --muted: #5c564b;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      color: var(--ink);
-      background: var(--paper);
-      font: 16px/1.5 Meiryo, "Yu Gothic", "Hiragino Sans", sans-serif;
-    }
-    header {
-      background: var(--mark);
-      color: var(--mark-ink);
-      padding: 14px 16px;
-    }
-    header h1 { margin: 0; font-size: 1.15rem; font-weight: 700; }
-    header p { margin: 4px 0 0; font-size: 0.9rem; opacity: 0.9; }
-    main { max-width: 840px; margin: 0 auto; padding: 16px; }
-    section {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      padding: 14px;
-      margin: 0 0 12px;
-    }
-    h2 { margin: 0 0 10px; font-size: 1rem; }
-    label { display: block; font-size: 0.8rem; margin: 0 0 4px; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-    input, select, textarea, button {
-      font: inherit;
-      width: 100%;
-      padding: 8px 10px;
-      border: 1px solid var(--line);
-      background: #fff;
-      color: var(--ink);
-    }
-    button {
-      width: auto;
-      background: var(--mark);
-      color: var(--mark-ink);
-      border-color: var(--mark);
-      font-weight: 700;
-      cursor: pointer;
-    }
-    button.sub { background: #fff; color: var(--ink); }
-    .pass { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
-    .uri {
-      font-family: Consolas, "BIZ UDGothic", monospace;
-      font-size: 0.9rem;
-      word-break: break-all;
-      min-height: 4.2em;
-      margin: 6px 0 10px;
-    }
-    .mono { font-family: Consolas, "BIZ UDGothic", monospace; }
-    .hint, .warn { font-size: 0.8rem; margin: 0 0 8px; }
-    .hint { color: var(--muted); }
-    .warn { color: #8a1d1d; min-height: 1.2em; }
-    details { margin: 4px 0 0; }
-    summary { cursor: pointer; font-size: 0.9rem; }
-    .out + .out { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
-    .toast {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      z-index: 30;
-      padding: 12px 16px;
-      text-align: center;
-      font-weight: 700;
-      background: #163528;
-      color: #fff;
-      transform: translateY(-110%);
-      transition: transform 0.16s ease;
-    }
-    .toast.show { transform: translateY(0); }
-    .toast.bad { background: #7a1f1f; }
-    @media (max-width: 640px) {
-      .grid, .grid3, .pass { grid-template-columns: 1fr; }
-    }
-  </style>
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#1f6f4a">
+  <title>SRT URI Generator – OBS / FFmpeg / srt-live-transmit / vMix / MediaMTX</title>
+  <meta name="description" content="OBS Studio、FFmpeg、srt-live-transmit、vMix、MediaMTX 用の SRT URI をブラウザ内で生成します。パスフレーズは端末の外へ送信しません。Browser-only SRT URI generator.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="SRT URI Generator">
+  <meta property="og:title" content="SRT URI Generator – OBS / FFmpeg / srt-live-transmit / vMix / MediaMTX">
+  <meta property="og:description" content="OBS Studio、FFmpeg、srt-live-transmit、vMix、MediaMTX 用の SRT URI をブラウザ内で生成します。パスフレーズは端末の外へ送信しません。Browser-only SRT URI generator.">
+  <meta property="og:url" content="https://mikanseilaboratory.github.io/srt-uri-generator/">
+  <meta property="og:image" content="https://mikanseilaboratory.github.io/srt-uri-generator/ogp.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="SRT URI Generator – OBS / FFmpeg / srt-live-transmit / vMix / MediaMTX">
+  <meta property="og:locale" content="ja_JP">
+  <meta property="og:locale:alternate" content="en_US">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="SRT URI Generator – OBS / FFmpeg / srt-live-transmit / vMix / MediaMTX">
+  <meta name="twitter:description" content="OBS Studio、FFmpeg、srt-live-transmit、vMix、MediaMTX 用の SRT URI をブラウザ内で生成します。パスフレーズは端末の外へ送信しません。Browser-only SRT URI generator.">
+  <meta name="twitter:image" content="https://mikanseilaboratory.github.io/srt-uri-generator/ogp.png">
+  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="./favicon.png" type="image/png" sizes="48x48">
+  <link rel="apple-touch-icon" href="./apple-touch-icon.png">
+  <link rel="stylesheet" href="./style.css">
 </head>
 <body>
+  <a class="skip" href="#output" data-i18n="skipToOutput">出力へ移動</a>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
-  <header>
-    <h1>SRT URI</h1>
-    <p>host / port / mode / latency / passphrase から、ブラウザ内だけで URI を生成します。パスフレーズはサーバーへ送信しません。</p>
-  </header>
-  <main>
-    <section>
-      <div class="grid">
+
+  <header class="top">
+    <div class="top-inner">
+      <div class="brand">
+        <svg class="mark" viewBox="0 0 64 64" aria-hidden="true" focusable="false">
+          <rect width="64" height="64" rx="14" fill="#1f6f4a"/>
+          <path d="M16 20l12 12-12 12" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M34 20l12 12-12 12" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" opacity="0.6"/>
+        </svg>
         <div>
-          <label for="host">host</label>
-          <input id="host" data-field placeholder="203.0.113.10" spellcheck="false" autocomplete="off">
-        </div>
-        <div>
-          <label for="port">port</label>
-          <input id="port" data-field inputmode="numeric" placeholder="9000" spellcheck="false" autocomplete="off">
+          <h1 data-i18n="appTitle">SRT URI Generator</h1>
+          <p class="tagline" data-i18n="tagline">OBS Studio、FFmpeg、srt-live-transmit、vMix、MediaMTX 用の SRT URI をブラウザ内で生成します。入力内容は端末の外へ送信されません。</p>
         </div>
       </div>
-      <div class="grid3">
-        <div>
-          <label for="mode">mode</label>
-          <select id="mode" data-field>
-            <option value="caller" selected>caller</option>
-            <option value="listener">listener</option>
-            <option value="rendezvous">rendezvous</option>
-          </select>
+      <div class="top-tools">
+        <div class="seg seg-small" role="group" aria-label="言語" data-i18n-label="languageLabel" id="lang-switch">
+          <button type="button" data-lang="ja" aria-pressed="true" lang="ja">日本語</button>
+          <button type="button" data-lang="en" aria-pressed="false" lang="en">English</button>
         </div>
-        <div>
+        <button type="button" class="icon-btn" id="theme-toggle" aria-pressed="false" aria-label="ダークモード切替" data-i18n-label="themeToggle" data-i18n-title="themeToggle" title="ダークモード切替">
+          <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+          <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="layout">
+    <form id="form" class="card form" novalidate autocomplete="off" aria-labelledby="form-title">
+      <h2 id="form-title" class="visually-hidden">Input</h2>
+
+      <fieldset class="group">
+        <legend data-i18n="sectionConnection">接続</legend>
+        <div class="row row-host">
+          <div class="field">
+            <label for="host">host</label>
+            <input id="host" data-field placeholder="203.0.113.10" spellcheck="false" autocomplete="off" autocapitalize="off" inputmode="url" aria-describedby="host-help host-error">
+            <p class="help" id="host-help" data-i18n-html="hostHelpHtml">IPv4、ホスト名、IPv6（<code>[2001:db8::1]</code>）。<code>host:port</code> を貼り付けると port も埋まります。</p>
+            <p class="error" id="host-error" aria-live="polite"></p>
+          </div>
+          <div class="field">
+            <label for="port">port</label>
+            <input id="port" data-field inputmode="numeric" pattern="[0-9]*" placeholder="9000" spellcheck="false" autocomplete="off" aria-describedby="port-error">
+            <p class="error" id="port-error" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <div class="field">
+          <fieldset id="mode" class="seg-field" aria-describedby="mode-help">
+            <legend>mode</legend>
+            <div class="seg">
+              <input type="radio" name="mode" id="mode-caller" value="caller" checked data-field>
+              <label for="mode-caller">caller</label>
+              <input type="radio" name="mode" id="mode-listener" value="listener" data-field>
+              <label for="mode-listener">listener</label>
+              <input type="radio" name="mode" id="mode-rendezvous" value="rendezvous" data-field>
+              <label for="mode-rendezvous">rendezvous</label>
+            </div>
+          </fieldset>
+          <p class="help" id="mode-help" data-i18n="modeCallerHelp">相手（listener）へ接続します。送出側で最も一般的です。</p>
+        </div>
+
+        <div class="field">
           <label for="latency">latency (ms)</label>
-          <input id="latency" data-field type="number" min="0" step="1" value="2000">
+          <div class="latency-row">
+            <input id="latency" data-field type="number" min="0" step="1" value="2000" inputmode="numeric" aria-describedby="latency-help latency-error">
+            <div class="chips" role="group" aria-label="latency のプリセット" data-i18n-label="presetsLabel">
+              <button type="button" class="chip" data-latency="120">120</button>
+              <button type="button" class="chip" data-latency="500">500</button>
+              <button type="button" class="chip" data-latency="1000">1000</button>
+              <button type="button" class="chip" data-latency="2000">2000</button>
+              <button type="button" class="chip" data-latency="4000">4000</button>
+            </div>
+          </div>
+          <p class="help" id="latency-help" data-i18n-html="latencyHelpHtml">ミリ秒で入力します。OBS と FFmpeg の URI ではマイクロ秒に変換します（2000 ms → <code>latency=2000000</code>）。</p>
+          <p class="error" id="latency-error" aria-live="polite"></p>
         </div>
-        <div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend data-i18n="sectionEncryption">暗号化</legend>
+        <div class="field">
+          <div class="label-row">
+            <label for="passphrase">passphrase</label>
+            <span class="count" id="pass-count" aria-live="polite"></span>
+          </div>
+          <div class="pass">
+            <input id="passphrase" data-field type="password" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="pass-help pass-warn">
+            <button type="button" class="btn-sub" id="toggle-pass" aria-pressed="false" aria-controls="passphrase" data-i18n="passphraseShow">表示</button>
+            <button type="button" class="btn-sub" id="gen-pass" aria-label="ランダムなパスフレーズ（32 文字）を生成" data-i18n-label="passphraseGenerateLabel" data-i18n="passphraseGenerate">生成</button>
+          </div>
+          <p class="help" id="pass-help" data-i18n="passphraseHelp">10〜79 文字。空のままなら暗号化しません。</p>
+          <p class="error" id="pass-warn" aria-live="polite"></p>
+        </div>
+        <div class="field">
           <label for="pbkeylen">pbkeylen</label>
-          <select id="pbkeylen" data-field>
-            <option value="" selected>指定しない（デフォルト）</option>
+          <select id="pbkeylen" data-field aria-describedby="pbkeylen-help">
+            <option value="" selected data-i18n="notSetDefault">指定しない（デフォルト）</option>
             <option value="16">16 (AES-128)</option>
             <option value="24">24 (AES-192)</option>
             <option value="32">32 (AES-256)</option>
           </select>
+          <p class="help" id="pbkeylen-help" data-i18n="pbkeylenHelp">パスフレーズがあるときだけ URI に付きます。</p>
+        </div>
+      </fieldset>
+
+      <fieldset class="group">
+        <legend data-i18n="sectionStream">ストリーム</legend>
+        <div class="field">
+          <label for="streamid">streamid</label>
+          <input id="streamid" data-field spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="#!::r=live,m=request" aria-describedby="streamid-help stream-warn">
+          <p class="help" id="streamid-help" data-i18n-html="streamidHelpHtml">最大 512 文字。アクセス制御の標準形式は <code>#!::r=live,m=publish</code> です。</p>
+          <p class="error" id="stream-warn" aria-live="polite"></p>
+        </div>
+
+        <details class="advanced" id="advanced">
+          <summary data-i18n="advancedSummary">詳細オプション</summary>
+          <div class="row row-2">
+            <div class="field">
+              <label for="transtype">transtype</label>
+              <select id="transtype" data-field>
+                <option value="" selected data-i18n="notSet">指定しない</option>
+                <option value="live">live</option>
+                <option value="file">file</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="peerlatency">peerlatency (ms)</label>
+              <input id="peerlatency" data-field type="number" min="0" step="1" inputmode="numeric" placeholder="空欄なら latency と同じ" data-i18n-placeholder="peerlatencyPlaceholder" aria-describedby="peerlatency-error">
+              <p class="error" id="peerlatency-error" aria-live="polite"></p>
+            </div>
+            <div class="field">
+              <label for="conntimeo">conntimeo (ms)</label>
+              <input id="conntimeo" data-field type="number" min="0" step="1" inputmode="numeric" placeholder="3000" aria-describedby="conntimeo-error">
+              <p class="error" id="conntimeo-error" aria-live="polite"></p>
+            </div>
+            <div class="field">
+              <label for="payloadsize">payloadsize</label>
+              <input id="payloadsize" data-field type="number" min="0" step="1" inputmode="numeric" placeholder="1316" aria-describedby="payloadsize-error">
+              <p class="error" id="payloadsize-error" aria-live="polite"></p>
+            </div>
+            <div class="field">
+              <label for="tlpktdrop">tlpktdrop</label>
+              <select id="tlpktdrop" data-field>
+                <option value="" selected data-i18n="notSet">指定しない</option>
+                <option value="1" data-i18n="on">1 (on)</option>
+                <option value="0" data-i18n="off">0 (off)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="nakreport">nakreport</label>
+              <select id="nakreport" data-field>
+                <option value="" selected data-i18n="notSet">指定しない</option>
+                <option value="1" data-i18n="on">1 (on)</option>
+                <option value="0" data-i18n="off">0 (off)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="enforcedencryption">enforcedencryption</label>
+              <select id="enforcedencryption" data-field>
+                <option value="" selected data-i18n="notSet">指定しない</option>
+                <option value="1" data-i18n="on">1 (on)</option>
+                <option value="0" data-i18n="off">0 (off)</option>
+              </select>
+            </div>
+          </div>
+        </details>
+      </fieldset>
+
+      <div class="form-actions">
+        <button type="reset" class="btn-sub" id="reset" data-i18n="resetForm">入力をクリア</button>
+      </div>
+    </form>
+
+    <section id="output" class="card output" aria-labelledby="output-title">
+      <h2 id="output-title" data-i18n="sectionOutput">出力</h2>
+
+      <div class="tabs" role="tablist" aria-labelledby="output-title">
+        <button role="tab" type="button" id="tab-obs" aria-selected="true" aria-controls="panel-obs" data-tab="obs" data-i18n="tabObs">OBS</button>
+        <button role="tab" type="button" id="tab-ffmpeg" aria-selected="false" aria-controls="panel-ffmpeg" data-tab="ffmpeg" tabindex="-1" data-i18n="tabFfmpeg">FFmpeg</button>
+        <button role="tab" type="button" id="tab-transmit" aria-selected="false" aria-controls="panel-transmit" data-tab="transmit" tabindex="-1" data-i18n="tabTransmit">srt-live-transmit</button>
+        <button role="tab" type="button" id="tab-vmix" aria-selected="false" aria-controls="panel-vmix" data-tab="vmix" tabindex="-1" data-i18n="tabVmix">vMix</button>
+        <button role="tab" type="button" id="tab-mediamtx" aria-selected="false" aria-controls="panel-mediamtx" data-tab="mediamtx" tabindex="-1" data-i18n="tabMediamtx">MediaMTX</button>
+      </div>
+
+      <p class="empty" id="output-empty" aria-live="polite" data-i18n="outputEmptyCaller">host と port を入力すると URI が表示されます。</p>
+
+      <div class="panel" role="tabpanel" id="panel-obs" aria-labelledby="tab-obs" tabindex="0">
+        <p class="help" data-i18n="obsHint">Media Source の Input、または配信設定のサーバー欄に貼り付けます。latency はマイクロ秒です。</p>
+        <div class="out">
+          <div class="out-head">
+            <span class="out-title">srt://</span>
+            <button type="button" class="btn-copy" data-copy="obs" aria-label="OBS URI をコピー" data-copy-name="OBS URI"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="copy">コピー</span></button>
+          </div>
+          <pre class="uri" id="uri-obs" tabindex="0"></pre>
         </div>
       </div>
-      <label for="passphrase">passphrase</label>
-      <div class="pass">
-        <input id="passphrase" data-field type="password" spellcheck="false" autocomplete="off" autocapitalize="off">
-        <button type="button" class="sub" id="toggle-pass">表示</button>
-      </div>
-      <p id="pass-warn" class="warn" role="status"></p>
-      <p class="hint">10〜79文字です。空の場合は暗号化しません。pbkeylen はパスフレーズがあるときだけ URI に追加されます。入力内容はこの端末の外部へ送信されません。</p>
-      <label for="streamid">streamid</label>
-      <input id="streamid" data-field spellcheck="false" autocomplete="off" placeholder="#!::r=live,m=request">
-      <p id="stream-warn" class="warn" role="status"></p>
-      <details>
-        <summary>その他のオプション</summary>
-        <div class="grid" style="margin-top: 10px;">
-          <div>
-            <label for="transtype">transtype</label>
-            <select id="transtype" data-field>
-              <option value="" selected>指定しない</option>
-              <option value="live">live</option>
-              <option value="file">file</option>
-            </select>
+
+      <div class="panel" role="tabpanel" id="panel-ffmpeg" aria-labelledby="tab-ffmpeg" tabindex="0" hidden>
+        <p class="help" data-i18n-html="ffmpegHintHtml">受信: <code>ffmpeg -i "URI"</code>、送出: <code>-f mpegts "URI"</code>。latency はマイクロ秒、connect_timeout はミリ秒です。</p>
+        <div class="out">
+          <div class="out-head">
+            <span class="out-title">srt://</span>
+            <button type="button" class="btn-copy" data-copy="ffmpeg" aria-label="FFmpeg URI をコピー" data-copy-name="FFmpeg URI"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="copy">コピー</span></button>
           </div>
-          <div>
-            <label for="peerlatency">peerlatency (ms)</label>
-            <input id="peerlatency" data-field type="number" min="0" step="1" placeholder="latency と同じ場合は空欄">
-          </div>
-          <div>
-            <label for="conntimeo">conntimeo (ms)</label>
-            <input id="conntimeo" data-field type="number" min="0" step="1" placeholder="3000">
-          </div>
-          <div>
-            <label for="payloadsize">payloadsize</label>
-            <input id="payloadsize" data-field type="number" min="0" step="1" placeholder="1316">
-          </div>
-          <div>
-            <label for="tlpktdrop">tlpktdrop</label>
-            <select id="tlpktdrop" data-field>
-              <option value="" selected>指定しない</option>
-              <option value="1">1 (on)</option>
-              <option value="0">0 (off)</option>
-            </select>
-          </div>
-          <div>
-            <label for="nakreport">nakreport</label>
-            <select id="nakreport" data-field>
-              <option value="" selected>指定しない</option>
-              <option value="1">1 (on)</option>
-              <option value="0">0 (off)</option>
-            </select>
-          </div>
-          <div>
-            <label for="enforcedencryption">enforcedencryption</label>
-            <select id="enforcedencryption" data-field>
-              <option value="" selected>指定しない</option>
-              <option value="1">1 (on)</option>
-              <option value="0">0 (off)</option>
-            </select>
-          </div>
+          <pre class="uri" id="uri-ffmpeg" tabindex="0"></pre>
         </div>
-      </details>
-    </section>
-
-    <section>
-      <h2>URI</h2>
-      <p class="hint">クエリの値は encodeURIComponent でエンコードしています。OBS と FFmpeg の latency はマイクロ秒、srt-live-transmit と vMix はミリ秒です。listener で host を空にすると <span class="mono">srt://:port?mode=listener</span> になります。</p>
-
-      <div class="out">
-        <label for="uri-obs">OBS（Media Source の Input、または配信のサーバー）</label>
-        <p class="hint">FFmpeg と同じ URI です。この URI の latency はマイクロ秒です。2000 ms は latency=2000000 になります。</p>
-        <textarea id="uri-obs" class="uri" readonly rows="3"></textarea>
-        <button type="button" data-copy="obs">コピー</button>
       </div>
 
-      <div class="out">
-        <label for="uri-ffmpeg">FFmpeg</label>
-        <p class="hint">受信は ffmpeg -i "URI"、送出は -f mpegts "URI" を使用します。latency はマイクロ秒、connect_timeout はミリ秒のままです。</p>
-        <textarea id="uri-ffmpeg" class="uri" readonly rows="3"></textarea>
-        <button type="button" data-copy="ffmpeg">コピー</button>
+      <div class="panel" role="tabpanel" id="panel-transmit" aria-labelledby="tab-transmit" tabindex="0" hidden>
+        <p class="help" data-i18n-html="transmitHintHtml">libsrt の URI です。latency はミリ秒。パラメータ名は SRTO_ を除いた形（<code>enforcedencryption</code>、<code>conntimeo</code>、<code>payloadsize</code>）です。</p>
+        <div class="out">
+          <div class="out-head">
+            <span class="out-title">srt://</span>
+            <button type="button" class="btn-copy" data-copy="transmit" aria-label="srt-live-transmit URI をコピー" data-copy-name="srt-live-transmit URI"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="copy">コピー</span></button>
+          </div>
+          <pre class="uri" id="uri-transmit" tabindex="0"></pre>
+        </div>
       </div>
 
-      <div class="out">
-        <label for="uri-transmit">srt-live-transmit / libsrt</label>
-        <p class="hint">latency はミリ秒です。パラメータ名は SRTO_ を除いたもの（enforcedencryption, conntimeo, payloadsize）になります。</p>
-        <textarea id="uri-transmit" class="uri" readonly rows="3"></textarea>
-        <button type="button" data-copy="transmit">コピー</button>
+      <div class="panel" role="tabpanel" id="panel-vmix" aria-labelledby="tab-vmix" tabindex="0" hidden>
+        <p class="help" data-i18n="vmixHint">vMix の各欄にそのまま入力します（URI ではありません）。Passphrase と Stream ID はエンコードしません。Latency はミリ秒です。</p>
+        <div class="out">
+          <div class="out-head">
+            <span class="out-title">vMix</span>
+            <button type="button" class="btn-copy" data-copy="vmix" aria-label="vMix 設定をコピー" data-copy-name="vMix"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="copy">コピー</span></button>
+          </div>
+          <pre class="uri" id="uri-vmix" tabindex="0"></pre>
+        </div>
       </div>
 
-      <div class="out">
-        <label for="uri-vmix">vMix（各欄にそのまま入力します。URI ではありません）</label>
-        <p class="hint">パスフレーズと streamid はパーセントエンコードしません。Type は Caller / Listener / Rendezvous、Latency はミリ秒です。</p>
-        <textarea id="uri-vmix" class="uri" readonly rows="8"></textarea>
-        <button type="button" data-copy="vmix">コピー</button>
+      <div class="panel" role="tabpanel" id="panel-mediamtx" aria-labelledby="tab-mediamtx" tabindex="0" hidden>
+        <p class="help" data-i18n="mediamtxHint">MediaMTX を SRT サーバーとして使う構成です。host と port には MediaMTX のアドレスを入れます（既定ポートは 8890）。</p>
+        <div class="field">
+          <label for="mediamtx-path" data-i18n="mediamtxPathLabel">パス名</label>
+          <input id="mediamtx-path" data-field value="mystream" spellcheck="false" autocomplete="off" autocapitalize="off" aria-describedby="mediamtx-path-help mediamtx-path-error">
+          <p class="help" id="mediamtx-path-help" data-i18n="mediamtxPathHelp">英数字と _ - . / が使えます。先頭の / は付けません。</p>
+          <p class="error" id="mediamtx-path-error" aria-live="polite"></p>
+        </div>
+        <p class="empty" id="mediamtx-empty" aria-live="polite" data-i18n="mediamtxHostRequired" hidden>MediaMTX の host と port を入力すると URI が表示されます。</p>
+        <div class="out">
+          <div class="out-head">
+            <span class="out-title">mediamtx.yml</span>
+            <button type="button" class="btn-copy" data-copy="mediamtxYml" aria-label="mediamtx.yml をコピー" data-copy-name="mediamtx.yml"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="copy">コピー</span></button>
+          </div>
+          <p class="help" data-i18n="mediamtxYmlHint">SRT サーバーを有効にし、パスごとにパスフレーズを設定します。</p>
+          <pre class="uri" id="uri-mediamtx-yml" tabindex="0"></pre>
+        </div>
+        <div class="out">
+          <div class="out-head">
+            <span class="out-title" data-i18n="mediamtxPublishLabel">送出 URI（publish）</span>
+            <button type="button" class="btn-copy" data-copy="mediamtxPublish" aria-label="publish URI をコピー" data-copy-name="publish URI"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="copy">コピー</span></button>
+          </div>
+          <p class="help" data-i18n-html="mediamtxPublishHintHtml">OBS / FFmpeg 用（latency はマイクロ秒）。FFmpeg では <code>&amp;pkt_size=1316</code> を付けることが推奨されています。</p>
+          <pre class="uri" id="uri-mediamtx-publish" tabindex="0"></pre>
+        </div>
+        <div class="out">
+          <div class="out-head">
+            <span class="out-title" data-i18n="mediamtxReadLabel">受信 URI（read）</span>
+            <button type="button" class="btn-copy" data-copy="mediamtxRead" aria-label="read URI をコピー" data-copy-name="read URI"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="copy">コピー</span></button>
+          </div>
+          <p class="help" data-i18n="mediamtxReadHint">OBS / FFmpeg 用（latency はマイクロ秒）。</p>
+          <pre class="uri" id="uri-mediamtx-read" tabindex="0"></pre>
+        </div>
       </div>
     </section>
   </main>
+
+  <footer class="foot">
+    <p data-i18n="footerPrivacy">すべてブラウザ内で処理します。入力内容の送信や保存は行いません。</p>
+    <p data-i18n="footerUnits">latency の入力はミリ秒です。OBS と FFmpeg はマイクロ秒、srt-live-transmit と vMix はミリ秒で出力します。</p>
+  </footer>
+
+  <div class="quick" id="quick">
+    <a class="btn-sub" href="#output" data-i18n="quickJump">出力へ</a>
+    <button type="button" class="btn-copy" id="quick-copy"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M5 15V5a1 1 0 0 1 1-1h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span data-i18n="copy">コピー</span></button>
+  </div>
+
   <script type="module" src="./app.mjs"></script>
 </body>
 </html>

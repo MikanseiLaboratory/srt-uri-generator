@@ -40,6 +40,35 @@ const AES_LABEL = {
   32: "AES-256",
 };
 
+const MESSAGES = {
+  ja: {
+    passphraseLength: "SRT のパスフレーズは 10〜79 文字です",
+    streamidLength: "streamid は 512 文字までです",
+    vmixHostEmpty: "(空欄。Listener で全インターフェイス)",
+    pathEmpty: "パス名を入力してください",
+    pathSlash: "パス名は / で始められません",
+    pathChars: "パス名に使えるのは英数字と _ - . / だけです",
+    pathDots: "パス名に . や .. のセグメントは使えません",
+  },
+  en: {
+    passphraseLength: "SRT passphrases must be 10–79 characters",
+    streamidLength: "streamid must be 512 characters or fewer",
+    vmixHostEmpty: "(empty: listen on all interfaces)",
+    pathEmpty: "Enter a path name",
+    pathSlash: "Path name cannot start with /",
+    pathChars: "Path name may only contain letters, digits, _ - . and /",
+    pathDots: "Path name cannot contain . or .. segments",
+  },
+};
+
+/** Path-name rules from MediaMTX internal/conf/path.go (rePathName). */
+const MEDIAMTX_PATH = /^[0-9a-zA-Z_\-/.]+$/;
+const YAML_PLAIN_KEY = /^[A-Za-z_][0-9A-Za-z_\-/.]*$/;
+
+function messagesFor(lang) {
+  return MESSAGES[lang] || MESSAGES.ja;
+}
+
 export function encodeSrtQueryValue(value) {
   return encodeURIComponent(String(value));
 }
@@ -77,26 +106,101 @@ export function buildSrtCallerUri({ host, port, latencyMs, passphrase, mode = "c
 
 export function buildOutputs(input) {
   const norm = normalizeInput(input);
+  const lang = input?.lang;
   const obs = buildFromNormalized(norm, FFMPEG);
   const transmit = buildFromNormalized(norm, LIBSRT);
   return {
     obs,
     ffmpeg: obs,
     transmit,
-    vmix: buildVmix(norm),
-    passphraseWarning: passphraseWarning(norm.passphrase),
-    streamidWarning: norm.streamid.length > 512 ? "streamid は 512 文字までです" : "",
+    vmix: buildVmix(norm, lang),
+    mediamtx: buildMediamtx(input),
+    passphraseWarning: passphraseWarning(norm.passphrase, lang),
+    streamidWarning: norm.streamid.length > 512 ? messagesFor(lang).streamidLength : "",
   };
 }
 
-export function passphraseWarning(passphrase) {
+export function passphraseWarning(passphrase, lang) {
   const len = String(passphrase ?? "").length;
   if (len === 0) return "";
-  if (len < 10 || len > 79) return "SRT のパスフレーズは 10〜79 文字です";
+  if (len < 10 || len > 79) return messagesFor(lang).passphraseLength;
   return "";
 }
 
-function buildFromNormalized(norm, profile) {
+/**
+ * Validates a MediaMTX path name. Returns "" when valid, otherwise a message.
+ * Rules follow MediaMTX internal/conf/path.go: non-empty, no leading slash,
+ * only [0-9a-zA-Z_-/.], and no "." or ".." segments.
+ */
+export function mediamtxPathWarning(path, lang) {
+  const m = messagesFor(lang);
+  const name = String(path ?? "").trim();
+  if (name === "") return m.pathEmpty;
+  if (name.startsWith("/")) return m.pathSlash;
+  if (!MEDIAMTX_PATH.test(name)) return m.pathChars;
+  if (name.split("/").some((segment) => segment === "." || segment === "..")) return m.pathDots;
+  return "";
+}
+
+/**
+ * MediaMTX output: a mediamtx.yml snippet for the SRT server plus the publish/read
+ * URIs that use MediaMTX's own stream ID convention (streamid=publish:<path> / read:<path>).
+ * MediaMTX is the listener, so clients always use mode=caller. The URIs follow the
+ * OBS/FFmpeg profile (latency in microseconds).
+ */
+export function buildMediamtx(input = {}) {
+  const norm = normalizeInput(input);
+  const lang = input.lang;
+  const path = String(input.mediamtxPath ?? "").trim();
+  const pathWarning = mediamtxPathWarning(path, lang);
+  const portOk = validPort(norm.port);
+  const empty = { yml: "", publish: "", read: "", pathWarning };
+  if (!portOk || pathWarning) return empty;
+  if ([norm.latencyMs, norm.peerLatencyMs, norm.conntimeoMs, norm.payloadSize].includes(undefined)) return empty;
+
+  // A valid path only contains [0-9a-zA-Z_-/.], and ":" is allowed in a URI query,
+  // so the stream ID is emitted verbatim, exactly as MediaMTX documents it.
+  const caller = { ...norm, mode: "caller" };
+  const raw = { rawStreamid: true };
+  const publish = buildFromNormalized({ ...caller, streamid: `publish:${path}` }, FFMPEG, raw);
+  const read = buildFromNormalized({ ...caller, streamid: `read:${path}` }, FFMPEG, raw);
+  return { yml: buildMediamtxYaml(norm, path), publish, read, pathWarning: "" };
+}
+
+function buildMediamtxYaml(norm, path) {
+  const key = YAML_PLAIN_KEY.test(path) ? path : JSON.stringify(path);
+  const lines = ["srt: true", `srtAddress: :${norm.port}`, "", "paths:", `  ${key}:`];
+  if (norm.passphrase !== "") {
+    const quoted = JSON.stringify(norm.passphrase);
+    lines.push(`    srtPublishPassphrase: ${quoted}`, `    srtReadPassphrase: ${quoted}`);
+  }
+  return lines.join("\n");
+}
+
+function validPort(port) {
+  if (!/^\d+$/.test(String(port ?? ""))) return false;
+  const n = Number(port);
+  return Number.isSafeInteger(n) && n >= 1 && n <= 65535;
+}
+
+/** Field-level checks for inline form feedback. Empty values are "valid" here; requiredness is decided by the UI. */
+export function isValidSrtHost(host) {
+  const raw = String(host ?? "").trim();
+  if (raw === "") return true;
+  return formatSrtHost(splitHostPort(raw, "").host) !== "";
+}
+
+export function isValidPort(port) {
+  const text = String(port ?? "").trim();
+  if (text === "") return true;
+  return validPort(text);
+}
+
+export function isValidCount(value) {
+  return cleanInt(value) !== undefined;
+}
+
+function buildFromNormalized(norm, profile, opts = {}) {
   const authority = authorityOf(norm.host, norm.port, norm.mode);
   if (!authority) return "";
   if ([norm.latencyMs, norm.peerLatencyMs, norm.conntimeoMs, norm.payloadSize].includes(undefined)) {
@@ -112,7 +216,7 @@ function buildFromNormalized(norm, profile) {
     params.push(`passphrase=${encodeSrtQueryValue(norm.passphrase)}`);
   }
   if (norm.streamid !== "") {
-    params.push(`streamid=${encodeSrtQueryValue(norm.streamid)}`);
+    params.push(`streamid=${opts.rawStreamid ? norm.streamid : encodeSrtQueryValue(norm.streamid)}`);
   }
   if (norm.transtype) {
     params.push(`transtype=${encodeSrtQueryValue(norm.transtype)}`);
@@ -129,11 +233,11 @@ function buildFromNormalized(norm, profile) {
   return `srt://${authority}?${params.join("&")}`;
 }
 
-function buildVmix(norm) {
+function buildVmix(norm, lang) {
   if ([norm.latencyMs, norm.peerLatencyMs, norm.conntimeoMs, norm.payloadSize].includes(undefined)) return "";
   if (!authorityOf(norm.host, norm.port, norm.mode)) return "";
   const lines = [
-    `Hostname: ${norm.host || "(空欄。Listener で全インターフェイス)"}`,
+    `Hostname: ${norm.host || messagesFor(lang).vmixHostEmpty}`,
     `Port: ${norm.port}`,
     `Type: ${MODE_LABEL[norm.mode]}`,
   ];
@@ -175,10 +279,9 @@ function formatSrtHost(host) {
     if (!inner || inner.includes("]")) return "";
     return `[${inner}]`;
   }
-  if (h.includes(":")) {
-    if (h.includes("]")) return "";
-    return `[${h}]`;
-  }
+  // Stray brackets (e.g. "[::1") would otherwise produce "srt://[[::1]:port".
+  if (h.includes("[") || h.includes("]")) return "";
+  if (h.includes(":")) return `[${h}]`;
   return h;
 }
 
