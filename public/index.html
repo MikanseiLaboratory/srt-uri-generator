@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SRT URI</title>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --paper: #f3efe6;
+      --panel: #fffdf8;
+      --line: #c8c0b2;
+      --mark: #1f3a2e;
+      --mark-ink: #f3efe6;
+      --muted: #5c564b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font: 16px/1.5 Meiryo, "Yu Gothic", "Hiragino Sans", sans-serif;
+    }
+    header {
+      background: var(--mark);
+      color: var(--mark-ink);
+      padding: 14px 16px;
+    }
+    header h1 { margin: 0; font-size: 1.15rem; font-weight: 700; }
+    header p { margin: 4px 0 0; font-size: 0.9rem; opacity: 0.9; }
+    main { max-width: 840px; margin: 0 auto; padding: 16px; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      padding: 14px;
+      margin: 0 0 12px;
+    }
+    h2 { margin: 0 0 10px; font-size: 1rem; }
+    label { display: block; font-size: 0.8rem; margin: 0 0 4px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    input, select, textarea, button {
+      font: inherit;
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+    }
+    button {
+      width: auto;
+      background: var(--mark);
+      color: var(--mark-ink);
+      border-color: var(--mark);
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.sub { background: #fff; color: var(--ink); }
+    .pass { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+    .uri {
+      font-family: Consolas, "BIZ UDGothic", monospace;
+      font-size: 0.9rem;
+      word-break: break-all;
+      min-height: 4.2em;
+      margin: 6px 0 10px;
+    }
+    .mono { font-family: Consolas, "BIZ UDGothic", monospace; }
+    .hint, .warn { font-size: 0.8rem; margin: 0 0 8px; }
+    .hint { color: var(--muted); }
+    .warn { color: #8a1d1d; min-height: 1.2em; }
+    details { margin: 4px 0 0; }
+    summary { cursor: pointer; font-size: 0.9rem; }
+    .out + .out { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+    .toast {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 30;
+      padding: 12px 16px;
+      text-align: center;
+      font-weight: 700;
+      background: #163528;
+      color: #fff;
+      transform: translateY(-110%);
+      transition: transform 0.16s ease;
+    }
+    .toast.show { transform: translateY(0); }
+    .toast.bad { background: #7a1f1f; }
+    @media (max-width: 640px) {
+      .grid, .grid3, .pass { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <header>
+    <h1>SRT URI</h1>
+    <p>host / port / mode / latency / passphrase から、ブラウザ内だけで URI を生成します。パスフレーズはサーバーへ送信しません。</p>
+  </header>
+  <main>
+    <section>
+      <div class="grid">
+        <div>
+          <label for="host">host</label>
+          <input id="host" data-field placeholder="203.0.113.10" spellcheck="false" autocomplete="off">
+        </div>
+        <div>
+          <label for="port">port</label>
+          <input id="port" data-field inputmode="numeric" placeholder="9000" spellcheck="false" autocomplete="off">
+        </div>
+      </div>
+      <div class="grid3">
+        <div>
+          <label for="mode">mode</label>
+          <select id="mode" data-field>
+            <option value="caller" selected>caller</option>
+            <option value="listener">listener</option>
+            <option value="rendezvous">rendezvous</option>
+          </select>
+        </div>
+        <div>
+          <label for="latency">latency (ms)</label>
+          <input id="latency" data-field type="number" min="0" step="1" value="2000">
+        </div>
+        <div>
+          <label for="pbkeylen">pbkeylen</label>
+          <select id="pbkeylen" data-field>
+            <option value="" selected>指定しない（デフォルト）</option>
+            <option value="16">16 (AES-128)</option>
+            <option value="24">24 (AES-192)</option>
+            <option value="32">32 (AES-256)</option>
+          </select>
+        </div>
+      </div>
+      <label for="passphrase">passphrase</label>
+      <div class="pass">
+        <input id="passphrase" data-field type="password" spellcheck="false" autocomplete="off" autocapitalize="off">
+        <button type="button" class="sub" id="toggle-pass">表示</button>
+      </div>
+      <p id="pass-warn" class="warn" role="status"></p>
+      <p class="hint">10〜79文字です。空の場合は暗号化しません。pbkeylen はパスフレーズがあるときだけ URI に追加されます。入力内容はこの端末の外部へ送信されません。</p>
+      <label for="streamid">streamid</label>
+      <input id="streamid" data-field spellcheck="false" autocomplete="off" placeholder="#!::r=live,m=request">
+      <p id="stream-warn" class="warn" role="status"></p>
+      <details>
+        <summary>その他のオプション</summary>
+        <div class="grid" style="margin-top: 10px;">
+          <div>
+            <label for="transtype">transtype</label>
+            <select id="transtype" data-field>
+              <option value="" selected>指定しない</option>
+              <option value="live">live</option>
+              <option value="file">file</option>
+            </select>
+          </div>
+          <div>
+            <label for="peerlatency">peerlatency (ms)</label>
+            <input id="peerlatency" data-field type="number" min="0" step="1" placeholder="latency と同じ場合は空欄">
+          </div>
+          <div>
+            <label for="conntimeo">conntimeo (ms)</label>
+            <input id="conntimeo" data-field type="number" min="0" step="1" placeholder="3000">
+          </div>
+          <div>
+            <label for="payloadsize">payloadsize</label>
+            <input id="payloadsize" data-field type="number" min="0" step="1" placeholder="1316">
+          </div>
+          <div>
+            <label for="tlpktdrop">tlpktdrop</label>
+            <select id="tlpktdrop" data-field>
+              <option value="" selected>指定しない</option>
+              <option value="1">1 (on)</option>
+              <option value="0">0 (off)</option>
+            </select>
+          </div>
+          <div>
+            <label for="nakreport">nakreport</label>
+            <select id="nakreport" data-field>
+              <option value="" selected>指定しない</option>
+              <option value="1">1 (on)</option>
+              <option value="0">0 (off)</option>
+            </select>
+          </div>
+          <div>
+            <label for="enforcedencryption">enforcedencryption</label>
+            <select id="enforcedencryption" data-field>
+              <option value="" selected>指定しない</option>
+              <option value="1">1 (on)</option>
+              <option value="0">0 (off)</option>
+            </select>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section>
+      <h2>URI</h2>
+      <p class="hint">クエリの値は encodeURIComponent でエンコードしています。OBS と FFmpeg の latency はマイクロ秒、srt-live-transmit と vMix はミリ秒です。listener で host を空にすると <span class="mono">srt://:port?mode=listener</span> になります。</p>
+
+      <div class="out">
+        <label for="uri-obs">OBS（Media Source の Input、または配信のサーバー）</label>
+        <p class="hint">FFmpeg と同じ URI です。この URI の latency はマイクロ秒です。2000 ms は latency=2000000 になります。</p>
+        <textarea id="uri-obs" class="uri" readonly rows="3"></textarea>
+        <button type="button" data-copy="obs">コピー</button>
+      </div>
+
+      <div class="out">
+        <label for="uri-ffmpeg">FFmpeg</label>
+        <p class="hint">受信は ffmpeg -i "URI"、送出は -f mpegts "URI" を使用します。latency はマイクロ秒、connect_timeout はミリ秒のままです。</p>
+        <textarea id="uri-ffmpeg" class="uri" readonly rows="3"></textarea>
+        <button type="button" data-copy="ffmpeg">コピー</button>
+      </div>
+
+      <div class="out">
+        <label for="uri-transmit">srt-live-transmit / libsrt</label>
+        <p class="hint">latency はミリ秒です。パラメータ名は SRTO_ を除いたもの（enforcedencryption, conntimeo, payloadsize）になります。</p>
+        <textarea id="uri-transmit" class="uri" readonly rows="3"></textarea>
+        <button type="button" data-copy="transmit">コピー</button>
+      </div>
+
+      <div class="out">
+        <label for="uri-vmix">vMix（各欄にそのまま入力します。URI ではありません）</label>
+        <p class="hint">パスフレーズと streamid はパーセントエンコードしません。Type は Caller / Listener / Rendezvous、Latency はミリ秒です。</p>
+        <textarea id="uri-vmix" class="uri" readonly rows="8"></textarea>
+        <button type="button" data-copy="vmix">コピー</button>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="./app.mjs"></script>
+</body>
+</html>
