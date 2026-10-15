@@ -287,6 +287,15 @@ function passphraseLength(built) {
   for (const key of html.matchAll(/data-i18n="([^"]+)"/g)) {
     assert(!key[1].endsWith("Html"), `data-i18n keys must not be Html keys: ${key[1]}`);
   }
+  // The static (no-JS) Japanese text must match the dictionary so the two cannot drift.
+  for (const m of html.matchAll(/<(\w+)[^>]*?\sdata-i18n(?:-html)?="([^"]+)"[^>]*>([\s\S]*?)<\/\1>/g)) {
+    assert(m[3].trim() === STRINGS.ja[m[2]], `static text for ${m[2]} matches STRINGS.ja: ${m[3].trim()}`);
+  }
+  for (const m of html.matchAll(/data-i18n-label="([^"]+)"[^>]*\baria-label="([^"]*)"|aria-label="([^"]*)"[^>]*\bdata-i18n-label="([^"]+)"/g)) {
+    const key = m[1] ?? m[4];
+    const label = m[2] ?? m[3];
+    assert(label === STRINGS.ja[key], `static aria-label for ${key} matches STRINGS.ja: ${label}`);
+  }
 
   // OGP / social preview metadata and icons.
   const meta = (attr, name) => {
