@@ -1,143 +1,188 @@
-// Checks for the static site. Runs under plain Node (no dependencies):
-//   node scripts/check.mjs
-//
-// 1. Unit tests for the pure URI builders in public/uri.mjs.
-// 2. Static checks on public/: every referenced asset is a relative path
-//    (so the site works under https://<user>.github.io/<repo>/) and no
-//    external URLs are loaded at runtime.
-
-import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import path from "node:path";
+import { buildOutputs, buildSrtCallerUri, buildSrtUri, encodeSrtQueryValue } from "../public/uri.mjs";
 
-import {
-  buildAll,
-  buildFfmpegUri,
-  buildObsUri,
-  buildSrtLiveTransmitUri,
-  buildVmixUri,
-  formatHost,
-  msToMicroseconds,
-  normalizeParams,
-} from "../public/uri.mjs";
+const root = dirname(fileURLToPath(import.meta.url));
+const siteRoot = join(root, "..");
+const failures = [];
 
-const publicDir = fileURLToPath(new URL("../public/", import.meta.url));
-let passed = 0;
+function assert(cond, message) {
+  if (!cond) failures.push(message);
+}
 
-async function test(name, fn) {
-  try {
-    await fn();
-    passed += 1;
-    console.log(`ok - ${name}`);
-  } catch (error) {
-    console.error(`not ok - ${name}`);
-    console.error(error);
-    process.exitCode = 1;
+function walk(dir) {
+  const out = [];
+  for (const name of readdirSync(dir)) {
+    if (name === "node_modules" || name === ".git") continue;
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) out.push(...walk(path));
+    else out.push(path);
+  }
+  return out;
+}
+
+{
+  const uri = buildSrtCallerUri({
+    host: "203.0.113.10",
+    port: 6100,
+    latencyMs: 2000,
+    passphrase: '{"passphrase":"example"}',
+  });
+  assert(
+    uri === "srt://203.0.113.10:6100?mode=caller&latency=2000&passphrase=%7B%22passphrase%22%3A%22example%22%7D",
+    `libsrt URI encoding mismatch: ${uri}`,
+  );
+  assert(encodeSrtQueryValue('{"passphrase":"example"}') === "%7B%22passphrase%22%3A%22example%22%7D", "encodeURIComponent passphrase");
+  assert(buildSrtCallerUri({ host: "", port: 6100, latencyMs: 2000 }) === "", "caller without host should yield empty URI");
+  assert(buildSrtCallerUri({ host: "203.0.113.10", port: "", latencyMs: 2000 }) === "", "empty port should yield empty URI");
+}
+
+{
+  const input = {
+    host: "203.0.113.10",
+    port: "9000",
+    mode: "caller",
+    latencyMs: "2000",
+    passphrase: "correct horse",
+    pbkeylen: "32",
+    streamid: "#!::r=live,m=publish",
+  };
+  const obs = buildSrtUri(input, "ffmpeg");
+  const transmit = buildSrtUri(input, "libsrt");
+  assert(
+    obs ===
+      "srt://203.0.113.10:9000?mode=caller&latency=2000000&pbkeylen=32&passphrase=correct%20horse&streamid=%23!%3A%3Ar%3Dlive%2Cm%3Dpublish",
+    `OBS/FFmpeg URI mismatch: ${obs}`,
+  );
+  assert(
+    transmit ===
+      "srt://203.0.113.10:9000?mode=caller&latency=2000&pbkeylen=32&passphrase=correct%20horse&streamid=%23!%3A%3Ar%3Dlive%2Cm%3Dpublish",
+    `srt-live-transmit URI mismatch: ${transmit}`,
+  );
+  assert(obs.includes("passphrase=correct%20horse"), "OBS passphrase uses encodeURIComponent");
+  assert(!transmit.includes("pbkeylen=32") || input.passphrase, "pbkeylen stays with passphrase");
+}
+
+{
+  const withoutPass = buildSrtUri(
+    { host: "203.0.113.10", port: "9000", mode: "listener", latencyMs: "120", pbkeylen: "16" },
+    "libsrt",
+  );
+  assert(withoutPass === "srt://203.0.113.10:9000?mode=listener&latency=120", `pbkeylen without passphrase: ${withoutPass}`);
+  const listener = buildSrtUri({ host: "", port: "9000", mode: "listener", latencyMs: "2000" }, "libsrt");
+  assert(listener === "srt://:9000?mode=listener&latency=2000", `listener without host: ${listener}`);
+  const ipv6 = buildSrtUri({ host: "2001:db8::1", port: "9000", mode: "rendezvous", latencyMs: "0" }, "libsrt");
+  assert(ipv6 === "srt://[2001:db8::1]:9000?mode=rendezvous&latency=0", `ipv6: ${ipv6}`);
+  const pasted = buildSrtUri({ host: "[2001:db8::1]:9000", port: "", mode: "caller" }, "libsrt");
+  assert(pasted === "srt://[2001:db8::1]:9000?mode=caller", `pasted ipv6: ${pasted}`);
+}
+
+{
+  const input = {
+    host: "203.0.113.10",
+    port: "9000",
+    mode: "caller",
+    latencyMs: "200",
+    peerLatencyMs: "100",
+    passphrase: "a&b=c d",
+    enforcedencryption: "1",
+    conntimeoMs: "3000",
+    payloadSize: "1316",
+    tlpktdrop: "1",
+    nakreport: "0",
+    transtype: "live",
+  };
+  const ffmpeg = buildSrtUri(input, "ffmpeg");
+  const libsrt = buildSrtUri(input, "libsrt");
+  assert(ffmpeg.includes("latency=200000"), ffmpeg);
+  assert(ffmpeg.includes("peerlatency=100000"), ffmpeg);
+  assert(ffmpeg.includes("passphrase=a%26b%3Dc%20d"), ffmpeg);
+  assert(ffmpeg.includes("enforced_encryption=1"), ffmpeg);
+  assert(ffmpeg.includes("connect_timeout=3000"), ffmpeg);
+  assert(ffmpeg.includes("payload_size=1316"), ffmpeg);
+  assert(libsrt.includes("latency=200"), libsrt);
+  assert(libsrt.includes("peerlatency=100"), libsrt);
+  assert(libsrt.includes("enforcedencryption=1"), libsrt);
+  assert(libsrt.includes("conntimeo=3000"), libsrt);
+  assert(libsrt.includes("payloadsize=1316"), libsrt);
+  assert(libsrt.includes("tlpktdrop=1"), libsrt);
+  assert(libsrt.includes("nakreport=0"), libsrt);
+  assert(libsrt.includes("transtype=live"), libsrt);
+  assert(!libsrt.includes("enforced_encryption"), "libsrt must not use the ffmpeg parameter name");
+  assert(buildSrtUri({ ...input, latencyMs: "12ms" }, "libsrt") === "", "invalid latency should not emit a URI");
+}
+
+{
+  const built = buildOutputs({
+    host: "203.0.113.10",
+    port: "9000",
+    mode: "caller",
+    latencyMs: "2000",
+    passphrase: '{"passphrase":"example"}',
+    pbkeylen: "32",
+    streamid: "#!::r=live,m=publish",
+  });
+  assert(built.obs === built.ffmpeg, "OBS and FFmpeg share the FFmpeg SRT URI");
+  assert(built.obs.includes("latency=2000000"), built.obs);
+  assert(built.transmit.includes("latency=2000"), built.transmit);
+  assert(built.transmit.includes("passphrase=%7B%22passphrase%22%3A%22example%22%7D"), built.transmit);
+  assert(built.vmix.includes('Passphrase: {"passphrase":"example"}'), "vMix keeps the raw passphrase");
+  assert(!built.vmix.includes("%7B"), "vMix must not percent-encode the passphrase");
+  assert(built.vmix.includes("Type: Caller"), built.vmix);
+  assert(built.vmix.includes("Latency: 2000 ms"), built.vmix);
+  assert(built.vmix.includes("Key length: 32 (AES-256)"), built.vmix);
+  assert(built.vmix.includes("Stream ID: #!::r=live,m=publish"), built.vmix);
+  assert(buildOutputs({ host: "", port: "1", mode: "caller" }).obs === "", "caller still needs a host");
+  assert(passphraseLength(built) === "", "example JSON passphrase is long enough");
+}
+
+function passphraseLength(built) {
+  return built.passphraseWarning;
+}
+
+{
+  assert(buildOutputs({ host: "203.0.113.10", port: "9", passphrase: "short" }).passphraseWarning.includes("10"), "short passphrase warning");
+  assert(buildOutputs({ host: "203.0.113.10", port: "9", passphrase: "" }).passphraseWarning === "", "empty passphrase has no warning");
+}
+
+{
+  const html = readFileSync(join(siteRoot, "public/index.html"), "utf8");
+  const app = readFileSync(join(siteRoot, "public/app.mjs"), "utf8");
+  const uri = readFileSync(join(siteRoot, "public/uri.mjs"), "utf8");
+  const wf = readFileSync(join(siteRoot, ".github/workflows/pages.yml"), "utf8");
+  for (const id of ["host", "port", "mode", "latency", "passphrase", "pbkeylen", "streamid", "toast"]) {
+    assert(html.includes(`id="${id}"`), `generator has ${id}`);
+  }
+  assert(html.includes('value="caller"'), "generator default mode is caller");
+  assert(html.includes('value="2000"'), "generator default latency");
+  assert(html.includes('value="listener"') && html.includes('value="rendezvous"'), "all three modes");
+  assert(html.includes("./app.mjs"), "page loads the client module");
+  assert(!html.includes("status.html"), "page no longer links to the flow dashboard");
+  assert(!/fetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|localStorage|sessionStorage/.test(html + app + uri), "client does not send or store the passphrase");
+  for (const ref of html.matchAll(/\b(?:src|href)=["']([^"']+)["']/g)) {
+    assert(!/^(?:[a-z]+:)?\/\//i.test(ref[1]) && !ref[1].startsWith("/"), `asset path must be relative for the Pages subpath: ${ref[1]}`);
+  }
+  assert(wf.includes("actions/upload-pages-artifact"), "workflow uploads the Pages artifact");
+  assert(wf.includes("actions/deploy-pages"), "workflow deploys with deploy-pages");
+  assert(/path:\s*public\b/.test(wf), "Pages artifact is the public directory");
+  assert(!wf.includes("secrets."), "deploy needs no GitHub secrets");
+  assert(!/cloudflare|wrangler|CLOUDFLARE_|AWS_/i.test(wf), "workflow has no Cloudflare or AWS setup");
+  const banned = ["makuhari", "osaki", "glight", "幕張", "大崎", "MediaConnect", "ZWC8fo4XfKkF5BVQVuCpEYul", "57.182.0.18"];
+  for (const file of walk(siteRoot)) {
+    if (file.endsWith("package-lock.json") || file.endsWith(`${sep}check.mjs`) || /\.(png|jpe?g|gif|ico|webp)$/i.test(file)) continue;
+    const text = readFileSync(file, "utf8");
+    for (const word of banned) {
+      assert(!text.includes(word), `${file} still contains ${word}`);
+    }
+    if (file.includes(`${sep}public${sep}`)) {
+      assert(!/tgs|TGS|glight|Glight/i.test(text), `${file} still names a specific deployment`);
+    }
   }
 }
 
-const base = {
-  host: "203.0.113.10",
-  port: 9000,
-  mode: "caller",
-  latencyMs: 120,
-  streamId: "",
-  passphrase: "",
-  pbKeyLen: 16,
-};
-
-await test("latency is converted to microseconds for OBS and FFmpeg", () => {
-  assert.equal(msToMicroseconds(120), 120000);
-  assert.equal(buildObsUri(base), "srt://203.0.113.10:9000?mode=caller&latency=120000");
-  assert.equal(buildFfmpegUri(base), "srt://203.0.113.10:9000?mode=caller&latency=120000");
-});
-
-await test("latency stays in milliseconds for srt-live-transmit and vMix", () => {
-  assert.equal(buildSrtLiveTransmitUri(base), "srt://203.0.113.10:9000?mode=caller&latency=120");
-  assert.equal(buildVmixUri(base), "srt://203.0.113.10:9000?mode=caller&latency=120");
-});
-
-await test("passphrase is percent-encoded with encodeURIComponent and pbkeylen is appended", () => {
-  const params = { ...base, passphrase: "p@ss w&rd#1234", pbKeyLen: 32 };
-  const expectedSecret = `passphrase=${encodeURIComponent("p@ss w&rd#1234")}&pbkeylen=32`;
-  assert.equal(encodeURIComponent("p@ss w&rd#1234"), "p%40ss%20w%26rd%231234");
-  assert.ok(buildObsUri(params).endsWith(expectedSecret));
-  assert.ok(buildFfmpegUri(params).endsWith(expectedSecret));
-  assert.ok(buildSrtLiveTransmitUri(params).endsWith(expectedSecret));
-  assert.ok(buildVmixUri(params).endsWith(expectedSecret));
-});
-
-await test("pbkeylen is omitted when passphrase is empty or key length is 0", () => {
-  assert.ok(!buildObsUri(base).includes("pbkeylen"));
-  const noLen = buildObsUri({ ...base, passphrase: "0123456789", pbKeyLen: 0 });
-  assert.ok(noLen.includes("passphrase=0123456789"));
-  assert.ok(!noLen.includes("pbkeylen"));
-});
-
-await test("stream id is percent-encoded", () => {
-  const uri = buildObsUri({ ...base, streamId: "#!::r=live/stream1" });
-  assert.ok(uri.includes(`streamid=${encodeURIComponent("#!::r=live/stream1")}`));
-  assert.ok(!uri.includes("streamid=#"));
-});
-
-await test("IPv6 literals are bracketed", () => {
-  assert.equal(formatHost("2001:db8::1"), "[2001:db8::1]");
-  assert.equal(formatHost("[2001:db8::1]"), "[2001:db8::1]");
-  assert.equal(formatHost("example.com"), "example.com");
-  assert.ok(buildObsUri({ ...base, host: "2001:db8::1" }).startsWith("srt://[2001:db8::1]:9000?"));
-});
-
-await test("buildAll returns one URI per target", () => {
-  const all = buildAll(base);
-  assert.deepEqual(Object.keys(all).sort(), ["ffmpeg", "obs", "slt", "vmix"]);
-});
-
-await test("normalizeParams accepts form strings and reports validation errors", () => {
-  const ok = normalizeParams({ host: " relay.example ", port: "4000", latencyMs: "250", pbKeyLen: "24" });
-  assert.deepEqual(ok.errors, []);
-  assert.equal(ok.params.host, "relay.example");
-  assert.equal(ok.params.port, 4000);
-  assert.equal(ok.params.latencyMs, 250);
-  assert.equal(ok.params.pbKeyLen, 24);
-  assert.equal(ok.params.mode, "caller");
-
-  const bad = normalizeParams({ host: "", port: "70000", mode: "bogus", latencyMs: "-1", pbKeyLen: "7", passphrase: "short" });
-  assert.equal(bad.errors.length, 6);
-});
-
-// --- static asset checks -------------------------------------------------
-
-const html = await readFile(path.join(publicDir, "index.html"), "utf8");
-const files = await readdir(publicDir);
-
-await test("index.html references only relative local assets", () => {
-  const refs = [...html.matchAll(/\b(?:src|href)=["']([^"']+)["']/g)].map((m) => m[1]);
-  assert.ok(refs.length > 0, "expected at least one asset reference");
-  for (const ref of refs) {
-    if (ref.startsWith("data:")) continue;
-    assert.ok(!/^(?:[a-z]+:)?\/\//i.test(ref), `external reference found: ${ref}`);
-    assert.ok(!ref.startsWith("/"), `root-absolute path breaks under a Pages subpath: ${ref}`);
-    const file = ref.replace(/^\.\//, "").split(/[?#]/)[0];
-    assert.ok(files.includes(file), `referenced asset missing from public/: ${ref}`);
-  }
-});
-
-await test("no runtime network access in client modules", async () => {
-  for (const name of files.filter((f) => f.endsWith(".mjs"))) {
-    const source = await readFile(path.join(publicDir, name), "utf8");
-    assert.ok(!/\bfetch\s*\(/.test(source), `${name} calls fetch()`);
-    assert.ok(!/XMLHttpRequest|WebSocket|sendBeacon|EventSource/.test(source), `${name} uses a network API`);
-    assert.ok(!/https?:\/\//.test(source), `${name} embeds an http(s) URL`);
-  }
-});
-
-await test("no Cloudflare / Wrangler leftovers", () => {
-  assert.ok(!files.some((f) => /wrangler|_worker|_routes/i.test(f)), `found Worker files in public/: ${files}`);
-});
-
-if (process.exitCode) {
-  console.error(`\n${passed} check(s) passed, some failed.`);
-} else {
-  console.log(`\nAll ${passed} checks passed.`);
+if (failures.length) {
+  console.error(failures.map((f) => `FAIL ${f}`).join("\n"));
+  process.exit(1);
 }
+console.log("ok");

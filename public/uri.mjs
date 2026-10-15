@@ -1,189 +1,250 @@
-// Pure SRT URI building helpers. No DOM, no network: safe to run in the browser
-// and under Node (scripts/check.mjs imports this file directly).
-
-export const MODES = ["caller", "listener", "rendezvous"];
-export const KEY_LENGTHS = [0, 16, 24, 32];
-
-export const DEFAULTS = Object.freeze({
-  host: "",
-  port: 9000,
-  mode: "caller",
-  latencyMs: 120,
-  streamId: "",
-  passphrase: "",
-  pbKeyLen: 16,
-});
-
 /**
- * Normalises raw (string-ish) form values into a typed parameter object and
- * collects human-readable validation errors.
+ * Stateless SRT URI builder. Runs in the browser only.
+ * The passphrase is interpolated into the returned strings and must not be sent anywhere.
+ *
+ * Query values use encodeURIComponent. That encoding was verified for the OBS
+ * passphrase (including a JSON secret string).
  */
-export function normalizeParams(raw) {
-  const errors = [];
-  const host = String(raw.host ?? "").trim();
-  const mode = String(raw.mode ?? DEFAULTS.mode).trim();
-  const streamId = String(raw.streamId ?? "").trim();
-  const passphrase = String(raw.passphrase ?? "");
 
-  const port = toInt(raw.port, DEFAULTS.port);
-  const latencyMs = toInt(raw.latencyMs, DEFAULTS.latencyMs);
-  const pbKeyLen = toInt(raw.pbKeyLen, DEFAULTS.pbKeyLen);
+const FFMPEG = {
+  id: "ffmpeg",
+  latencyScale: 1000,
+  keys: {
+    peerlatency: "peerlatency",
+    enforced: "enforced_encryption",
+    conntimeo: "connect_timeout",
+    payload: "payload_size",
+  },
+};
 
-  if (host === "") {
-    errors.push("ホスト名または IP アドレスを入力してください。");
-  } else if (/[\s/?#@]/.test(host)) {
-    errors.push("ホスト名に空白や / ? # @ は使用できません。");
-  }
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    errors.push("ポート番号は 1〜65535 の整数で入力してください。");
-  }
-  if (!MODES.includes(mode)) {
-    errors.push("モードは caller / listener / rendezvous のいずれかを指定してください。");
-  }
-  if (!Number.isInteger(latencyMs) || latencyMs < 0) {
-    errors.push("レイテンシは 0 以上の整数 (ms) で入力してください。");
-  }
-  if (!KEY_LENGTHS.includes(pbKeyLen)) {
-    errors.push("暗号鍵長は 0 / 16 / 24 / 32 のいずれかを指定してください。");
-  }
-  if (passphrase !== "" && (passphrase.length < 10 || passphrase.length > 79)) {
-    errors.push("パスフレーズは 10〜79 文字で指定してください (SRT の仕様)。");
-  }
+const LIBSRT = {
+  id: "libsrt",
+  latencyScale: 1,
+  keys: {
+    peerlatency: "peerlatency",
+    enforced: "enforcedencryption",
+    conntimeo: "conntimeo",
+    payload: "payloadsize",
+  },
+};
 
+const MODE_LABEL = {
+  caller: "Caller",
+  listener: "Listener",
+  rendezvous: "Rendezvous",
+};
+
+const AES_LABEL = {
+  16: "AES-128",
+  24: "AES-192",
+  32: "AES-256",
+};
+
+export function encodeSrtQueryValue(value) {
+  return encodeURIComponent(String(value));
+}
+
+export function normalizeInput(input = {}) {
+  const split = splitHostPort(input.host, input.port);
+  const mode = cleanMode(input.mode);
   return {
-    params: { host, port, mode, latencyMs, streamId, passphrase, pbKeyLen },
-    errors,
+    mode,
+    host: split.host,
+    port: split.port,
+    latencyMs: cleanInt(input.latencyMs ?? input.latency),
+    passphrase: input.passphrase == null ? "" : String(input.passphrase),
+    pbkeylen: cleanPbkeylen(input.pbkeylen),
+    streamid: input.streamid == null ? "" : String(input.streamid),
+    transtype: cleanTranstype(input.transtype),
+    peerLatencyMs: cleanInt(input.peerLatencyMs),
+    tlpktdrop: cleanBit(input.tlpktdrop),
+    nakreport: cleanBit(input.nakreport),
+    enforcedencryption: cleanBit(input.enforcedencryption),
+    conntimeoMs: cleanInt(input.conntimeoMs),
+    payloadSize: cleanInt(input.payloadSize),
   };
 }
 
-function toInt(value, fallback) {
-  if (value === undefined || value === null || value === "") return fallback;
-  const n = typeof value === "number" ? value : Number(String(value).trim());
-  return Number.isFinite(n) ? Math.trunc(n) : NaN;
+export function buildSrtUri(input, profileName = "libsrt") {
+  const norm = normalizeInput(input);
+  return buildFromNormalized(norm, profileByName(profileName));
 }
 
-/** Wraps IPv6 literals in brackets so they are valid in a URI authority. */
-export function formatHost(host) {
-  if (host.includes(":") && !host.startsWith("[")) return `[${host}]`;
-  return host;
+/** libsrt / srt-live-transmit URI. Latency stays in milliseconds. */
+export function buildSrtCallerUri({ host, port, latencyMs, passphrase, mode = "caller" } = {}) {
+  return buildSrtUri({ host, port, mode, latencyMs, passphrase }, "libsrt");
 }
 
-export function msToMicroseconds(ms) {
-  return ms * 1000;
+export function buildOutputs(input) {
+  const norm = normalizeInput(input);
+  const obs = buildFromNormalized(norm, FFMPEG);
+  const transmit = buildFromNormalized(norm, LIBSRT);
+  return {
+    obs,
+    ffmpeg: obs,
+    transmit,
+    vmix: buildVmix(norm),
+    passphraseWarning: passphraseWarning(norm.passphrase),
+    streamidWarning: norm.streamid.length > 512 ? "streamid は 512 文字までです" : "",
+  };
 }
 
-function authority({ host, port }) {
-  return `srt://${formatHost(host)}:${port}`;
+export function passphraseWarning(passphrase) {
+  const len = String(passphrase ?? "").length;
+  if (len === 0) return "";
+  if (len < 10 || len > 79) return "SRT のパスフレーズは 10〜79 文字です";
+  return "";
 }
 
-function buildQuery(pairs) {
-  const parts = [];
-  for (const [key, value] of pairs) {
-    if (value === undefined || value === null || value === "") continue;
-    parts.push(`${key}=${value}`);
+function buildFromNormalized(norm, profile) {
+  const authority = authorityOf(norm.host, norm.port, norm.mode);
+  if (!authority) return "";
+  if ([norm.latencyMs, norm.peerLatencyMs, norm.conntimeoMs, norm.payloadSize].includes(undefined)) {
+    return "";
   }
-  return parts.length ? `?${parts.join("&")}` : "";
+  const params = [`mode=${encodeSrtQueryValue(norm.mode)}`];
+  pushScaled(params, "latency", norm.latencyMs, profile.latencyScale);
+  pushScaled(params, profile.keys.peerlatency, norm.peerLatencyMs, profile.latencyScale);
+  if (norm.passphrase !== "" && norm.pbkeylen) {
+    params.push(`pbkeylen=${encodeSrtQueryValue(norm.pbkeylen)}`);
+  }
+  if (norm.passphrase !== "") {
+    params.push(`passphrase=${encodeSrtQueryValue(norm.passphrase)}`);
+  }
+  if (norm.streamid !== "") {
+    params.push(`streamid=${encodeSrtQueryValue(norm.streamid)}`);
+  }
+  if (norm.transtype) {
+    params.push(`transtype=${encodeSrtQueryValue(norm.transtype)}`);
+  }
+  pushBit(params, "tlpktdrop", norm.tlpktdrop);
+  pushBit(params, "nakreport", norm.nakreport);
+  pushBit(params, profile.keys.enforced, norm.enforcedencryption);
+  if (norm.conntimeoMs != null) {
+    params.push(`${profile.keys.conntimeo}=${encodeSrtQueryValue(norm.conntimeoMs)}`);
+  }
+  if (norm.payloadSize != null) {
+    params.push(`${profile.keys.payload}=${encodeSrtQueryValue(norm.payloadSize)}`);
+  }
+  return `srt://${authority}?${params.join("&")}`;
 }
 
-function secretParams(params, encode) {
-  if (params.passphrase === "") return [];
-  return [
-    ["passphrase", encode(params.passphrase)],
-    ["pbkeylen", params.pbKeyLen === 0 ? "" : params.pbKeyLen],
+function buildVmix(norm) {
+  if ([norm.latencyMs, norm.peerLatencyMs, norm.conntimeoMs, norm.payloadSize].includes(undefined)) return "";
+  if (!authorityOf(norm.host, norm.port, norm.mode)) return "";
+  const lines = [
+    `Hostname: ${norm.host || "(空欄。Listener で全インターフェイス)"}`,
+    `Port: ${norm.port}`,
+    `Type: ${MODE_LABEL[norm.mode]}`,
   ];
+  if (norm.latencyMs != null) lines.push(`Latency: ${norm.latencyMs} ms`);
+  if (norm.peerLatencyMs != null) lines.push(`Peer latency: ${norm.peerLatencyMs} ms`);
+  if (norm.passphrase !== "") lines.push(`Passphrase: ${norm.passphrase}`);
+  if (norm.streamid !== "") lines.push(`Stream ID: ${norm.streamid}`);
+  if (norm.passphrase !== "" && norm.pbkeylen) {
+    lines.push(`Key length: ${norm.pbkeylen} (${AES_LABEL[norm.pbkeylen]})`);
+  }
+  if (norm.transtype) lines.push(`Transtype: ${norm.transtype}`);
+  if (norm.tlpktdrop) lines.push(`Too-late packet drop: ${norm.tlpktdrop}`);
+  if (norm.nakreport) lines.push(`NAK report: ${norm.nakreport}`);
+  if (norm.enforcedencryption) lines.push(`Enforced encryption: ${norm.enforcedencryption}`);
+  if (norm.conntimeoMs != null) lines.push(`Connect timeout: ${norm.conntimeoMs} ms`);
+  if (norm.payloadSize != null) lines.push(`Payload size: ${norm.payloadSize}`);
+  return lines.join("\n");
 }
 
-/**
- * OBS Studio (Media Source / custom output). OBS hands the URL to FFmpeg's
- * libsrt wrapper, so latency is in microseconds. Query values must be
- * percent-encoded with encodeURIComponent, otherwise characters such as
- * "&" or "#" in the passphrase break the URL.
- */
-export function buildObsUri(params) {
-  return (
-    authority(params) +
-    buildQuery([
-      ["mode", params.mode],
-      ["latency", msToMicroseconds(params.latencyMs)],
-      ["streamid", encodeURIComponent(params.streamId)],
-      ...secretParams(params, encodeURIComponent),
-    ])
-  );
+function authorityOf(host, port, mode) {
+  if (!/^\d+$/.test(String(port ?? ""))) return "";
+  const portNum = Number(port);
+  if (!Number.isSafeInteger(portNum) || portNum < 1 || portNum > 65535) return "";
+  const rawHost = String(host ?? "").trim();
+  const formatted = formatSrtHost(rawHost);
+  if (rawHost && !formatted) return "";
+  if (!formatted) {
+    return mode === "listener" ? `:${portNum}` : "";
+  }
+  return `${formatted}:${portNum}`;
 }
 
-/** FFmpeg libsrt protocol: latency is in microseconds. */
-export function buildFfmpegUri(params) {
-  return (
-    authority(params) +
-    buildQuery([
-      ["mode", params.mode],
-      ["latency", msToMicroseconds(params.latencyMs)],
-      ["streamid", encodeURIComponent(params.streamId)],
-      ...secretParams(params, encodeURIComponent),
-    ])
-  );
+function formatSrtHost(host) {
+  const h = String(host ?? "").trim();
+  if (!h) return "";
+  if (/[\s/?#@\\]/.test(h)) return "";
+  if (h.startsWith("[") && h.endsWith("]")) {
+    const inner = h.slice(1, -1);
+    if (!inner || inner.includes("]")) return "";
+    return `[${inner}]`;
+  }
+  if (h.includes(":")) {
+    if (h.includes("]")) return "";
+    return `[${h}]`;
+  }
+  return h;
 }
 
-/** srt-live-transmit (Haivision reference tool): latency is in milliseconds. */
-export function buildSrtLiveTransmitUri(params) {
-  return (
-    authority(params) +
-    buildQuery([
-      ["mode", params.mode],
-      ["latency", params.latencyMs],
-      ["streamid", encodeURIComponent(params.streamId)],
-      ...secretParams(params, encodeURIComponent),
-    ])
-  );
+function splitHostPort(host, port) {
+  let h = String(host ?? "").trim();
+  let p = String(port ?? "").trim();
+  const bracketed = h.match(/^\[([^\]]+)\](?::(\d+))?$/);
+  if (bracketed) {
+    h = bracketed[1];
+    if (!p && bracketed[2]) p = bracketed[2];
+    return { host: h, port: p };
+  }
+  const withPort = h.match(/^([^:\[\]]+):(\d+)$/);
+  if (withPort) {
+    h = withPort[1];
+    if (!p) p = withPort[2];
+  }
+  return { host: h, port: p };
 }
 
-/** vMix SRT input/output: latency is in milliseconds. */
-export function buildVmixUri(params) {
-  return (
-    authority(params) +
-    buildQuery([
-      ["mode", params.mode],
-      ["latency", params.latencyMs],
-      ["streamid", encodeURIComponent(params.streamId)],
-      ...secretParams(params, encodeURIComponent),
-    ])
-  );
+function profileByName(name) {
+  return name === "ffmpeg" || name === "obs" ? FFMPEG : LIBSRT;
 }
 
-export const TARGETS = Object.freeze([
-  {
-    id: "obs",
-    label: "OBS Studio",
-    latencyUnit: "µs",
-    note: "メディアソース / 配信出力の URL 欄に貼り付け。レイテンシはマイクロ秒。",
-    build: buildObsUri,
-  },
-  {
-    id: "ffmpeg",
-    label: "FFmpeg",
-    latencyUnit: "µs",
-    note: "ffmpeg -i <URI> / -f mpegts <URI>。レイテンシはマイクロ秒。",
-    build: buildFfmpegUri,
-  },
-  {
-    id: "slt",
-    label: "srt-live-transmit",
-    latencyUnit: "ms",
-    note: "srt-live-transmit <入力> <出力>。レイテンシはミリ秒。",
-    build: buildSrtLiveTransmitUri,
-  },
-  {
-    id: "vmix",
-    label: "vMix",
-    latencyUnit: "ms",
-    note: "Input/Output の SRT 設定。レイテンシはミリ秒。",
-    build: buildVmixUri,
-  },
-]);
+function cleanMode(mode) {
+  const value = String(mode ?? "").trim().toLowerCase();
+  if (value === "listener" || value === "rendezvous" || value === "caller") return value;
+  return "caller";
+}
 
-/** Builds every target URI at once, keyed by target id. */
-export function buildAll(params) {
-  const out = {};
-  for (const target of TARGETS) out[target.id] = target.build(params);
-  return out;
+function cleanTranstype(value) {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (text === "live" || text === "file") return text;
+  return "";
+}
+
+function cleanPbkeylen(value) {
+  const text = String(value ?? "").trim();
+  if (text === "16" || text === "24" || text === "32") return text;
+  return "";
+}
+
+function cleanBit(value) {
+  const text = String(value ?? "").trim();
+  if (text === "0" || text === "1") return text;
+  return "";
+}
+
+/** null omits the parameter. undefined rejects the URI. */
+function cleanInt(value) {
+  if (value == null) return null;
+  const text = String(value).trim();
+  if (text === "") return null;
+  if (!/^\d+$/.test(text)) return undefined;
+  const n = Number(text);
+  if (!Number.isSafeInteger(n)) return undefined;
+  return String(n);
+}
+
+function pushScaled(params, key, value, scale) {
+  if (value == null) return;
+  const scaled = String(Number(value) * scale);
+  params.push(`${key}=${encodeSrtQueryValue(scaled)}`);
+}
+
+function pushBit(params, key, value) {
+  if (!value) return;
+  params.push(`${key}=${encodeSrtQueryValue(value)}`);
 }

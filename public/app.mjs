@@ -1,80 +1,103 @@
-import { TARGETS, normalizeParams } from "./uri.mjs";
+import { buildOutputs } from "./uri.mjs";
 
-const form = document.getElementById("form");
-const errorsEl = document.getElementById("errors");
-const resultsEl = document.getElementById("results");
+const host = document.getElementById("host");
+const port = document.getElementById("port");
+const mode = document.getElementById("mode");
+const latency = document.getElementById("latency");
+const passphrase = document.getElementById("passphrase");
+const pbkeylen = document.getElementById("pbkeylen");
+const streamid = document.getElementById("streamid");
+const transtype = document.getElementById("transtype");
+const peerLatency = document.getElementById("peerlatency");
+const tlpktdrop = document.getElementById("tlpktdrop");
+const nakreport = document.getElementById("nakreport");
+const enforced = document.getElementById("enforcedencryption");
+const conntimeo = document.getElementById("conntimeo");
+const payloadSize = document.getElementById("payloadsize");
+const passWarn = document.getElementById("pass-warn");
+const streamWarn = document.getElementById("stream-warn");
+const toast = document.getElementById("toast");
 
-const outputs = new Map();
+const outputs = {
+  obs: document.getElementById("uri-obs"),
+  ffmpeg: document.getElementById("uri-ffmpeg"),
+  transmit: document.getElementById("uri-transmit"),
+  vmix: document.getElementById("uri-vmix"),
+};
 
-for (const target of TARGETS) {
-  const wrapper = document.createElement("div");
-  wrapper.className = "result";
-  wrapper.dataset.target = target.id;
+let toastTimer = 0;
 
-  const heading = document.createElement("div");
-  const h3 = document.createElement("h3");
-  h3.textContent = `${target.label} (latency: ${target.latencyUnit})`;
-  const note = document.createElement("p");
-  note.className = "note";
-  note.textContent = target.note;
-  heading.append(h3, note);
-
-  const copy = document.createElement("button");
-  copy.type = "button";
-  copy.textContent = "コピー";
-  copy.disabled = true;
-
-  const output = document.createElement("output");
-  output.id = `uri-${target.id}`;
-  output.setAttribute("for", "form");
-
-  copy.addEventListener("click", async () => {
-    const text = output.textContent;
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      copy.textContent = "コピーしました";
-    } catch {
-      copy.textContent = "コピー失敗";
-    }
-    setTimeout(() => {
-      copy.textContent = "コピー";
-    }, 1500);
-  });
-
-  wrapper.append(heading, copy, output);
-  resultsEl.append(wrapper);
-  outputs.set(target.id, { output, copy, build: target.build });
-}
-
-function readForm() {
-  const data = new FormData(form);
-  return Object.fromEntries(data.entries());
+function readInput() {
+  return {
+    host: host.value,
+    port: port.value,
+    mode: mode.value,
+    latencyMs: latency.value,
+    passphrase: passphrase.value,
+    pbkeylen: pbkeylen.value,
+    streamid: streamid.value,
+    transtype: transtype.value,
+    peerLatencyMs: peerLatency.value,
+    tlpktdrop: tlpktdrop.value,
+    nakreport: nakreport.value,
+    enforcedencryption: enforced.value,
+    conntimeoMs: conntimeo.value,
+    payloadSize: payloadSize.value,
+  };
 }
 
 function render() {
-  const { params, errors } = normalizeParams(readForm());
+  const built = buildOutputs(readInput());
+  outputs.obs.value = built.obs;
+  outputs.ffmpeg.value = built.ffmpeg;
+  outputs.transmit.value = built.transmit;
+  outputs.vmix.value = built.vmix;
+  passWarn.textContent = built.passphraseWarning;
+  streamWarn.textContent = built.streamidWarning;
+}
 
-  errorsEl.replaceChildren(
-    ...errors.map((message) => {
-      const li = document.createElement("li");
-      li.textContent = message;
-      return li;
-    }),
-  );
+function showToast(message, bad) {
+  toast.textContent = message;
+  toast.classList.toggle("bad", Boolean(bad));
+  toast.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+}
 
-  const valid = errors.length === 0;
-  for (const { output, copy, build } of outputs.values()) {
-    output.textContent = valid ? build(params) : "";
-    copy.disabled = !valid;
+async function copyText(text, target) {
+  if (!text) {
+    const listener = mode.value === "listener";
+    showToast(listener ? "port を入力してください" : "host と port を入力してください", true);
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast("コピーしました");
+  } catch {
+    target.focus();
+    target.select();
+    const ok = document.execCommand("copy");
+    showToast(ok ? "コピーしました" : "コピーできませんでした", !ok);
   }
 }
 
-form.addEventListener("input", render);
-form.addEventListener("change", render);
-form.addEventListener("submit", (event) => {
-  event.preventDefault();
-  render();
+for (const el of document.querySelectorAll("[data-field]")) {
+  el.addEventListener("input", render);
+  el.addEventListener("change", render);
+}
+
+for (const button of document.querySelectorAll("[data-copy]")) {
+  button.addEventListener("click", () => {
+    const key = button.getAttribute("data-copy");
+    const target = outputs[key];
+    copyText(target.value, target);
+  });
+}
+
+document.getElementById("toggle-pass").addEventListener("click", (event) => {
+  const hidden = passphrase.type === "password";
+  passphrase.type = hidden ? "text" : "password";
+  event.currentTarget.textContent = hidden ? "非表示" : "表示";
 });
 
 render();
